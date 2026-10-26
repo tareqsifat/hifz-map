@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset=utf8>
+  <meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>হিফজ মানচিত্র</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Hind+Siliguri:wght@400;500;600&family=Noto+Serif+Bengali:wght@600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+  <div id="app" class="wrap" v-cloak>
+    <header class="top">
+      <div>
+        <h1>হিফজ মানচিত্র</h1>
+        <p>পুরো কুরআন একটি বর্গক্ষেত্র। প্রতিটি সূরা একটি জেলার মতো এলাকা, আর প্রতিটি আয়াত তার ভেতরের একটি ঘর। মুখস্থ
+          করা আয়াতগুলো সবুজ হয়ে যায়।</p>
+      </div>
+      <div>
+        <button v-if="!confirmReset" class="ghost" @click="confirmReset=true">সব মুছে নতুন করে শুরু</button>
+        <span v-else style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <span class="sub">সব মুছে ফেলবেন?</span>
+          <button class="primary" @click="resetAll">হ্যাঁ, মুছুন</button>
+          <button @click="confirmReset=false">না</button>
+        </span>
+      </div>
+    </header>
+
+    <div class="notice" v-if="isExample">
+      <span>এখন একটি উদাহরণ দেখানো হচ্ছে। নিজের হিফজ বসাতে খালি করে শুরু করুন।</span>
+      <span style="display:flex;gap:8px;flex:0 0 auto">
+        <button class="primary" @click="resetAll">খালি করে শুরু করুন</button>
+        <button @click="keepExample">উদাহরণ রাখুন</button>
+      </span>
+    </div>
+
+    <div class="grid">
+      <section class="panel mapcard" aria-label="হিফজ মানচিত্রের ছবি">
+        <div class="canvas-box">
+          <canvas id="card" ref="cardEl" width="1000" height="1200" @pointermove="onHover" @pointerleave="tip=null" @click="onMapClick"
+            role="img" :aria-label="'পুরো কুরআনের ' + bnPct(totalDone/TOTAL) + ' মুখস্থ'"></canvas>
+          <div class="tip" v-if="tip" :style="{left: tip.x + 'px', top: tip.y + 'px'}">{{ tip.text }}</div>
+        </div>
+        <div class="card-actions">
+          <input id="holder" type="text" v-model="name" placeholder="ছবিতে নাম (ঐচ্ছিক)" maxlength="40"
+            aria-label="ছবিতে নাম">
+          <button class="primary" v-if="canDownload" @click="downloadPng"
+            :disabled="saving">{{ saving ? 'তৈরি হচ্ছে…' : 'ছবি ডাউনলোড (PNG)' }}</button>
+        </div>
+        <p class="hint" v-if="dlMsg">{{ dlMsg }}</p>
+        <p class="hint" v-if="!canDownload">এই ভিউতে সরাসরি ডাউনলোড চালু নেই। ছবিতে রাইট-ক্লিক বা লং-প্রেস করে সেভ করতে
+          পারেন।</p>
+        <p class="hint">মানচিত্রের যেকোনো এলাকায় ক্লিক করলে সেই সূরা খুলবে। ক্রম: উপর-বাম থেকে শুরু, বড় সূরা বড়
+          এলাকা।</p>
+      </section>
+
+      <section class="panel ledger" aria-label="সূরার তালিকা">
+        <div class="ledger-head">
+          <input id="q" type="search" v-model="q" placeholder="সূরা খুঁজুন: নাম বা নম্বর" aria-label="সূরা খুঁজুন">
+        </div>
+        <div class="chips" role="group" aria-label="ছাঁকনি">
+          <button class="chip" v-for="f in filters" :key="f.k" :aria-pressed="filter===f.k"
+            @click="filter=f.k">{{ f.label }} · {{ bn(f.count) }}</button>
+        </div>
+        <div class="list">
+          <button v-for="s in shownSurahs" :key="s.i" class="row" :class="{done: doneBy[s.i]===s.n}"
+            @click="openSurah(s.i)">
+            <span class="num">{{ bn(s.i+1) }}</span>
+            <span class="names"><span class="bn">{{ s.bn }}</span><span class="en">{{ s.en }}</span></span>
+            <span class="ar">{{ s.ar }}</span>
+            <span class="meter">
+              <span class="bar"><i :style="{width: (doneBy[s.i]/s.n*100) + '%'}"></i></span>
+              <span class="pct">{{ bn(doneBy[s.i]) }}/{{ bn(s.n) }} · {{ bnPct(doneBy[s.i]/s.n, 0) }}</span>
+            </span>
+          </button>
+          <div class="empty" v-if="!shownSurahs.length">এই ছাঁকনিতে কোনো সূরা নেই।</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="overlay" v-if="modal" @click.self="closeModal" @keydown.esc="closeModal">
+      <div class="sheet" role="dialog" aria-modal="true" :aria-label="cur.bn">
+        <div class="sheet-head">
+          <div>
+            <div class="sub">সূরা {{ bn(modal.s+1) }} · {{ bn(cur.n) }} আয়াত</div>
+            <h2>{{ cur.bn }}</h2>
+            <div class="sub">এখন মুখস্থ: {{ bn(doneBy[modal.s]) }}/{{ bn(cur.n) }}</div>
+          </div>
+          <div class="ar">{{ cur.ar }}</div>
+        </div>
+
+        <div class="sheet-body" v-if="modal.step==='choose'">
+          <div class="choices">
+            <button class="choice" :class="{on: doneBy[modal.s]===cur.n}" @click="markWhole">
+              <b>সম্পূর্ণ সূরা</b>
+              <span>{{ doneBy[modal.s]===cur.n ? 'পুরো সূরা মুখস্থ আছে। আবার চাপলে কিছু বদলাবে না।' : 'সবগুলো ' + bn(cur.n) + ' আয়াত মুখস্থ হিসেবে চিহ্নিত হবে' }}</span>
+            </button>
+            <button class="choice" @click="modal.step='ayah'">
+              <b>আংশিক সূরা</b>
+              <span>নির্দিষ্ট আয়াত বা আয়াতের রেঞ্জ বেছে নিন</span>
+            </button>
+          </div>
+          <div style="margin-top:14px" v-if="doneBy[modal.s]>0">
+            <button class="ghost" @click="clearSurah">এই সূরার সব চিহ্ন মুছুন</button>
+          </div>
+        </div>
+
+        <template v-else>
+          <div class="sheet-body">
+            <div class="tools">
+              <span class="seg" role="group" aria-label="বাছাইয়ের ধরন">
+                <button :aria-pressed="modal.mode==='single'" @click="setMode('single')">একটি করে</button>
+                <button :aria-pressed="modal.mode==='range'" @click="setMode('range')">রেঞ্জ</button>
+              </span>
+              <button @click="fillDraft(true)">সব</button>
+              <button @click="fillDraft(false)">কোনোটি না</button>
+            </div>
+            <div class="range">
+              <span class="sub">আয়াত</span>
+              <input id="from" type="number" min="1" :max="cur.n" v-model.number="modal.from" aria-label="শুরু আয়াত">
+              <span class="sub">থেকে</span>
+              <input id="to" type="number" min="1" :max="cur.n" v-model.number="modal.to" aria-label="শেষ আয়াত">
+              <button @click="applyRange(true)">যোগ করুন</button>
+              <button @click="applyRange(false)">বাদ দিন</button>
+            </div>
+            <p class="sub" style="margin:0 0 10px">
+              {{ modal.mode==='range' ? (modal.anchor==null ? 'রেঞ্জের প্রথম আয়াতে চাপুন' : 'এবার শেষ আয়াতে চাপুন') : 'আয়াতে চাপলে মুখস্থ/বাকি বদলাবে। Shift চেপে ক্লিক করলে রেঞ্জ।' }}
+            </p>
+            <div class="tiles">
+              <button v-for="(v,k) in modal.draft" :key="k" class="tile" :class="{sel:v, anchor: modal.anchor===k}"
+                :aria-pressed="v" :aria-label="'আয়াত ' + (k+1)" @click="tapTile(k,$event)">{{ bn(k+1) }}</button>
+            </div>
+          </div>
+          <div class="sheet-foot">
+            <span class="sub">বাছাই: {{ bn(draftCount) }}/{{ bn(cur.n) }}</span>
+            <span class="btns">
+              <button @click="modal.step='choose'">পেছনে</button>
+              <button class="primary" @click="saveDraft">সংরক্ষণ</button>
+            </span>
+          </div>
+        </template>
+
+        <div class="sheet-foot" v-if="modal.step==='choose'">
+          <span></span>
+          <button @click="closeModal">বন্ধ করুন</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/card.js"></script>
+  <script src="js/app.js"></script>
+</body>
+
+</html>
