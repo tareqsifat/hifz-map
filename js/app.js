@@ -24,9 +24,7 @@ createApp({
     const tip = ref(null),
       modal = ref(null),
       cardEl = ref(null);
-    const canDownload = ref(false),
-      saving = ref(false),
-      dlMsg = ref('');
+    const saving = ref(false);
     let dl = null;
 
     const doneBy = computed(() => {
@@ -279,39 +277,108 @@ createApp({
       if (e.key === 'Escape' && modal.value) closeModal();
     });
 
-    // download
+    // download + share
+    const shareOpen = ref(false),
+      shareMsg = ref(''),
+      canNativeShare = ref(false);
+    const siteUrl = () => location.origin + location.pathname.replace(/index\.html$/, '');
+    const shareText = () => 'আমার হিফজ মানচিত্র: ' + bnPct(totalDone.value / TOTAL) + ' কুরআন মুখস্থ (' + bnInt(totalDone.value) + '/' + bnInt(TOTAL) + ' আয়াত)';
+
+    async function renderBlob() {
+      const c = document.createElement('canvas');
+      c.width = 2000;
+      c.height = 2400;
+      const ctx = c.getContext('2d');
+      ctx.scale(2, 2);
+      drawCard(ctx, bits, {
+        name: name.value.trim(),
+        doneBy: doneBy.value,
+        totalDone: totalDone.value,
+        fullCount: fullCount.value
+      });
+      return new Promise(r => c.toBlob(r, 'image/png'));
+    }
+
+    async function saveBlob(blob) {
+      if (dl) {
+        try {
+          const res = await dl.save({ filename: 'hifz-map.png', data: blob });
+          return res.status === 'saved';
+        } catch (err) {
+          if (err && err.code === 'declined') return false;
+          if (!['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'].includes(err && err.code)) throw err;
+        }
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'hifz-map.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      return true;
+    }
+
     async function downloadPng() {
-      if (!dl) return;
       saving.value = true;
-      dlMsg.value = '';
+      shareMsg.value = '';
       try {
-        const c = document.createElement('canvas');
-        c.width = 2000;
-        c.height = 2400;
-        const ctx = c.getContext('2d');
-        ctx.scale(2, 2);
-        drawCard(ctx, bits, {
-          name: name.value.trim(),
-          doneBy: doneBy.value,
-          totalDone: totalDone.value,
-          fullCount: fullCount.value
-        });
-        const blob = await new Promise(r => c.toBlob(r, 'image/png'));
-        const res = await dl.save({
-          filename: 'hifz-map.png',
-          data: blob
-        });
-        dlMsg.value = res.status === 'saved' ? 'ছবি সেভ হয়েছে।' : '';
+        if (await saveBlob(await renderBlob())) shareMsg.value = 'ছবি সেভ হয়েছে।';
       } catch (err) {
-        const code = err && err.code;
-        if (code === 'declined') dlMsg.value = '';
-        else if (code === 'rate_limited') dlMsg.value =
-          'আগের ডাউনলোড এখনো খোলা আছে। একটু পরে আবার চেষ্টা করুন।';
-        else if (['unavailable', 'not_granted', 'capability_disabled', 'capability_removed'].includes(code)) {
-          canDownload.value = false;
-        } else dlMsg.value = 'ছবি সেভ করা গেল না। আবার চেষ্টা করুন।';
+        shareMsg.value = 'ছবি সেভ করা গেল না। আবার চেষ্টা করুন।';
       } finally {
         saving.value = false;
+      }
+    }
+
+    function openShare() {
+      shareMsg.value = '';
+      shareOpen.value = true;
+    }
+
+    // device share sheet: image file + text + site link together
+    async function nativeShare() {
+      saving.value = true;
+      shareMsg.value = '';
+      try {
+        const blob = await renderBlob();
+        const file = new File([blob], 'hifz-map.png', { type: 'image/png' });
+        const data = { title: 'হিফজ মানচিত্র', text: shareText(), url: siteUrl() };
+        if (navigator.canShare && navigator.canShare({ files: [file] })) data.files = [file];
+        await navigator.share(data);
+      } catch (err) {
+        if (!err || err.name !== 'AbortError') shareMsg.value = 'শেয়ার করা গেল না।';
+      } finally {
+        saving.value = false;
+      }
+    }
+
+    // web share links can only carry text + link, so the image is downloaded for the user to attach
+    const platforms = [
+      { k: 'facebook', label: 'Facebook', color: '#1877f2', url: (u, t) => 'https://www.facebook.com/sharer/sharer.php?u=' + u + '&quote=' + t },
+      { k: 'whatsapp', label: 'WhatsApp', color: '#25d366', url: (u, t) => 'https://wa.me/?text=' + t + '%20' + u },
+      { k: 'messenger', label: 'Messenger', color: '#0084ff', url: (u) => 'https://www.facebook.com/dialog/send?link=' + u + '&app_id=966242223397117&redirect_uri=' + u },
+      { k: 'telegram', label: 'Telegram', color: '#26a5e4', url: (u, t) => 'https://t.me/share/url?url=' + u + '&text=' + t },
+      { k: 'x', label: 'X (Twitter)', color: '#000', url: (u, t) => 'https://twitter.com/intent/tweet?url=' + u + '&text=' + t },
+      { k: 'linkedin', label: 'LinkedIn', color: '#0a66c2', url: (u) => 'https://www.linkedin.com/sharing/share-offsite/?url=' + u },
+      { k: 'reddit', label: 'Reddit', color: '#ff4500', url: (u, t) => 'https://www.reddit.com/submit?url=' + u + '&title=' + t },
+      { k: 'email', label: 'Email', color: '#6b7a72', url: (u, t) => 'mailto:?subject=' + t + '&body=' + t + '%0A' + u }
+    ];
+
+    async function shareTo(p) {
+      const u = encodeURIComponent(siteUrl()),
+        t = encodeURIComponent(shareText());
+      window.open(p.url(u, t), '_blank', 'noopener,noreferrer');
+      shareMsg.value = 'ছবিটি ডাউনলোড করে পোস্টে যুক্ত করুন — লিংক ইতিমধ্যে সাথে আছে।';
+    }
+
+    async function copyLink() {
+      const txt = shareText() + '\n' + siteUrl();
+      try {
+        await navigator.clipboard.writeText(txt);
+        shareMsg.value = 'লিংক কপি হয়েছে।';
+      } catch (e) {
+        shareMsg.value = siteUrl();
       }
     }
 
@@ -333,7 +400,7 @@ createApp({
       } catch (e) {
         dl = null;
       }
-      canDownload.value = !!dl;
+      canNativeShare.value = !!navigator.share;
     });
 
     return {
@@ -367,10 +434,16 @@ createApp({
       tapTile,
       applyRange,
       saveDraft,
-      canDownload,
       saving,
-      dlMsg,
-      downloadPng
+      downloadPng,
+      shareOpen,
+      shareMsg,
+      canNativeShare,
+      platforms,
+      openShare,
+      nativeShare,
+      shareTo,
+      copyLink
     };
   }
 }).mount('#app');

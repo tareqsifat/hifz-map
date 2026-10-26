@@ -49,12 +49,8 @@
         <div class="card-actions">
           <input id="holder" type="text" v-model="name" placeholder="ছবিতে নাম (ঐচ্ছিক)" maxlength="40"
             aria-label="ছবিতে নাম">
-          <button class="primary" v-if="canDownload" @click="downloadPng"
-            :disabled="saving">{{ saving ? 'তৈরি হচ্ছে…' : 'ছবি ডাউনলোড (PNG)' }}</button>
+          <button class="primary" @click="openShare">ছবি শেয়ার / ডাউনলোড</button>
         </div>
-        <p class="hint" v-if="dlMsg">{{ dlMsg }}</p>
-        <p class="hint" v-if="!canDownload">এই ভিউতে সরাসরি ডাউনলোড চালু নেই। ছবিতে রাইট-ক্লিক বা লং-প্রেস করে সেভ করতে
-          পারেন।</p>
         <p class="hint">মানচিত্রের যেকোনো এলাকায় ক্লিক করলে সেই সূরা খুলবে। ক্রম: উপর-বাম থেকে শুরু, বড় সূরা বড়
           এলাকা।</p>
       </section>
@@ -151,6 +147,27 @@
         </div>
       </div>
     </div>
+    <div class="overlay" v-if="shareOpen" @click.self="shareOpen=false">
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="শেয়ার">
+        <div class="sheet-head">
+          <div>
+            <h2>শেয়ার করুন</h2>
+            <div class="sub">ছবির সাথে সাইটের লিংক যাবে</div>
+          </div>
+        </div>
+        <div class="sheet-body">
+          <div class="share-grid">
+            <button class="share-btn" @click="downloadPng" :disabled="saving"><i style="background:#1d6b47">⬇</i>ডাউনলোড (PNG)</button>
+            <button class="share-btn" v-if="canNativeShare" @click="nativeShare" :disabled="saving"><i style="background:#a8741a">⇪</i>ডিভাইস শেয়ার (ছবিসহ)</button>
+            <button class="share-btn" v-for="p in platforms" :key="p.k" @click="shareTo(p)"><i :style="{background:p.color}">{{ p.label[0] }}</i>{{ p.label }}</button>
+            <button class="share-btn" @click="copyLink"><i style="background:#6b7a72">⧉</i>লিংক কপি</button>
+          </div>
+          <p class="hint" v-if="shareMsg">{{ shareMsg }}</p>
+        </div>
+        <div class="sheet-foot"><span></span><button @click="shareOpen=false">বন্ধ করুন</button></div>
+      </div>
+    </div>
+
   </div>
 
 

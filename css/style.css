@@ -583,3 +583,33 @@ button:disabled {
 [v-cloak] {
   display: none
 }
+
+.share-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px
+}
+
+.share-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left
+}
+
+.share-btn i {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-style: normal;
+  font-weight: 600
+}
+
+@media(max-width:460px) {
+  .share-grid { grid-template-columns: 1fr }
+}
